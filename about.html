@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estatisticas | FELAs FC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;1,700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header site-header-inner">
+  <div class="header-inner">
+    <div class="brand-lockup compact">
+      <div class="brand-copy">
+        <p class="header-kicker">Performance Center</p>
+        <h1>Estatisticas</h1>
+        <p class="header-subtitle">Uma pagina-base para centralizar gols, assistencias, notas e todas as metricas que vao contar a historia do FELAs FC.</p>
+      </div>
+      <div class="header-visual mini" aria-hidden="true">
+        <div class="header-visual-field"></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<nav class="navbar">
+  <ul>
+    <li><a href="index.html">Home</a></li>
+    <li><a href="elenco.html">Elenco</a></li>
+    <li><a class="active" href="about.html">Estatisticas</a></li>
+    <li><a href="cantinho.html">Cantinho do Louco</a></li>
+    <li><a href="midia.html">Mídia</a></li>
+    <li><a href="admin.html">Admin</a></li>
+  </ul>
+</nav>
+
+<main class="page-shell">
+  <section class="stats-panel">
+    <div class="section-heading">
+      <p class="eyebrow">Painel ao vivo</p>
+    </div>
+
+    <div class="stats-shortcuts">
+      <a class="button-secondary" href="#stats-grid">Estatísticas</a>
+      <a class="button-secondary" href="#player-history-grid">Notas</a>
+    </div>
+
+    <div class="stats-grid" id="stats-grid">
+      <article class="stat-card">
+        <span class="stat-label">Carregando</span>
+        <strong>...</strong>
+        <p>Buscando estatísticas do Supabase.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="stats-panel">
+    <div class="section-heading">
+      <p class="eyebrow">Histórico de notas</p>
+    </div>
+
+    <div class="player-history-grid" id="player-history-grid">
+      <article class="player-history-card">
+        <p class="empty-state">Carregando histórico dos jogadores.</p>
+      </article>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <p>Criação e Design por caiordn. EA Sports FC e uma marca registrada da Eletronic Arts. Copyright 2026.</p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script src="news-data.js"></script>
+<script src="supabase-client.js"></script>
+<script src="about.js"></script>
+</body>
+</html>

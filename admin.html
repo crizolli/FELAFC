@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin | FELAs FC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;1,700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header site-header-inner">
+  <div class="header-inner">
+    <div class="brand-lockup compact">
+      <div class="brand-copy">
+        <p class="header-kicker">Control Room</p>
+        <h1>Admin FELAs FC</h1>
+        <p class="header-subtitle">Area reservada para login, publicacao e gerenciamento das noticias do seu time.</p>
+      </div>
+      <div class="header-visual mini" aria-hidden="true">
+        <div class="header-visual-field"></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<nav class="navbar">
+  <ul>
+    <li><a href="index.html">Home</a></li>
+    <li><a href="elenco.html">Elenco</a></li>
+    <li><a href="about.html">Estatisticas</a></li>
+    <li><a href="cantinho.html">Cantinho do Louco</a></li>
+    <li><a href="midia.html">Mídia</a></li>
+    <li><a class="active" href="admin.html">Admin</a></li>
+  </ul>
+</nav>
+
+<main class="page-shell">
+  <section class="admin-auth" id="admin-auth">
+    <div class="admin-auth-card">
+      <p class="eyebrow">Login</p>
+      <h2>Acesso ao painel</h2>
+      <p>Entre com seu email e senha do Supabase para publicar noticias e gerenciar o conteudo do site.</p>
+
+      <form class="news-form" id="login-form">
+        <label>
+          Email
+          <input type="email" name="email" placeholder="Seu email admin" required>
+        </label>
+
+        <label>
+          Senha
+          <input type="password" name="password" placeholder="Sua senha" required>
+        </label>
+
+        <div class="form-actions">
+          <button type="submit" class="button-primary">Entrar no painel</button>
+        </div>
+
+        <p class="form-feedback" id="login-feedback" aria-live="polite"></p>
+      </form>
+    </div>
+  </section>
+
+  <section class="admin-panel hidden" id="admin-panel">
+    <div class="manager-header">
+      <div>
+        <p class="eyebrow">Painel administrativo</p>
+        <h2>Publicar e editar noticias</h2>
+      </div>
+
+      <div class="manager-actions">
+        <button type="button" class="button-secondary" id="export-news">Exportar JSON</button>
+        <label class="button-secondary import-button">
+          Importar JSON
+          <input type="file" id="import-news" accept="application/json">
+        </label>
+        <button type="button" class="button-secondary" id="logout-admin">Sair</button>
+      </div>
+    </div>
+
+    <section class="editor-panel">
+      <div class="editor-copy">
+        <p class="eyebrow">Publicar noticia</p>
+        <h2>Painel rapido para alimentar o site</h2>
+        <p>As noticias publicadas aqui aparecem automaticamente na home publica do FELAs FC.</p>
+      </div>
+
+      <form class="news-form" id="news-form">
+        <input type="hidden" name="editingId" value="">
+
+        <label>
+          Categoria
+          <select name="category" required>
+            <option value="">Selecione uma categoria</option>
+            <option value="Partidas">Partidas</option>
+            <option value="Cantinho do Louco">Cantinho do Louco</option>
+            <option value="Melhores Momentos">Melhores Momentos</option>
+          </select>
+        </label>
+
+        <label>
+          Titulo
+          <input type="text" name="title" placeholder="Digite a manchete da noticia" maxlength="120" required>
+        </label>
+
+        <label>
+          Conteudo completo
+          <textarea name="content" rows="8" placeholder="Escreva aqui a materia completa da noticia" required></textarea>
+        </label>
+
+        <label>
+          Data da noticia
+          <input type="date" name="publishedDate" required>
+        </label>
+
+        <div class="ratings-editor">
+          <p class="eyebrow">Notas dos jogadores</p>
+          <div class="ratings-form-grid">
+            <label>
+              Breno
+              <input type="number" name="rating_breno" min="0" max="10" step="0.1" placeholder="0.0" required>
+              <textarea name="rating_note_breno" rows="3" placeholder="Comentario da nota do Breno"></textarea>
+            </label>
+            <label>
+              Glik
+              <input type="number" name="rating_glik" min="0" max="10" step="0.1" placeholder="0.0" required>
+              <textarea name="rating_note_glik" rows="3" placeholder="Comentario da nota do Glik"></textarea>
+            </label>
+            <label>
+              Joao
+              <input type="number" name="rating_joao" min="0" max="10" step="0.1" placeholder="0.0" required>
+              <textarea name="rating_note_joao" rows="3" placeholder="Comentario da nota do Joao"></textarea>
+            </label>
+            <label>
+              Caio
+              <input type="number" name="rating_caio" min="0" max="10" step="0.1" placeholder="0.0" required>
+              <textarea name="rating_note_caio" rows="3" placeholder="Comentario da nota do Caio"></textarea>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="button-primary" id="submit-news">Publicar noticia</button>
+          <button type="button" class="button-secondary" id="cancel-edit">Cancelar edicao</button>
+          <button type="button" class="button-secondary" id="reset-news">Remover noticias publicadas</button>
+        </div>
+
+        <p class="form-feedback" id="form-feedback" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section class="manager-panel">
+      <div class="manager-header">
+        <div>
+          <p class="eyebrow">Central de noticias</p>
+          <h2>Gerencie o que voce publicou</h2>
+        </div>
+      </div>
+
+      <div class="published-news-list" id="published-news-list">
+        <p class="empty-state">Voce ainda nao publicou noticias personalizadas.</p>
+      </div>
+    </section>
+
+    <section class="editor-panel">
+      <div class="editor-copy">
+        <p class="eyebrow">Mídia</p>
+        <h2>Cadastre vídeos do YouTube</h2>
+        <p>Adicione URLs para alimentar automaticamente a página de mídia do site.</p>
+      </div>
+
+      <form class="news-form" id="media-form">
+        <input type="hidden" name="editingMediaId" value="">
+
+        <label>
+          URL do YouTube
+          <input type="url" name="mediaUrl" placeholder="https://www.youtube.com/watch?v=..." required>
+        </label>
+
+        <label>
+          Título opcional
+          <input type="text" name="mediaTitle" placeholder="Nome do vídeo na página de mídia">
+        </label>
+
+        <label>
+          Data do vídeo
+          <input type="date" name="mediaPublishedDate" required>
+        </label>
+
+        <div class="form-actions">
+          <button type="submit" class="button-primary" id="submit-media">Salvar video</button>
+          <button type="button" class="button-secondary" id="cancel-media-edit" hidden>Cancelar edicao</button>
+        </div>
+
+        <p class="form-feedback" id="media-feedback" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section class="manager-panel">
+      <div class="manager-header">
+        <div>
+          <p class="eyebrow">Central de mídia</p>
+          <h2>Gerencie os vídeos publicados</h2>
+        </div>
+      </div>
+
+      <div class="published-news-list" id="media-list">
+        <p class="empty-state">Voce ainda nao cadastrou videos.</p>
+      </div>
+    </section>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <p>Criação e Design por caiordn. EA Sports FC e uma marca registrada da Eletronic Arts. Copyright 2026.</p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script src="news-data.js"></script>
+<script src="supabase-client.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>
