@@ -25,16 +25,17 @@ async function renderStats() {
 
   try {
     const newsItems = await window.FelasSupabase.fetchPublishedNews();
+    const ratedNewsItems = newsItems.filter((item) => isPartidasCategory(item.category));
 
-    if (!newsItems.length) {
+    if (!ratedNewsItems.length) {
       renderStatsState("Sem dados ainda", "Publique noticias com notas para alimentar as estatisticas automaticamente.");
       renderHistoryState("Publique notícias com notas para montar o histórico dos jogadores.");
       return;
     }
 
-    const stats = buildStats(newsItems);
+    const stats = buildStats(ratedNewsItems);
     statsGrid.innerHTML = stats.map(createStatCardMarkup).join("");
-    renderPlayerHistory(newsItems);
+    renderPlayerHistory(ratedNewsItems);
   } catch (error) {
     renderStatsState("Erro ao carregar", "Nao foi possivel buscar as estatisticas no Supabase agora.");
     renderHistoryState("Nao foi possível carregar o histórico das notas agora.");
@@ -253,4 +254,13 @@ function formatStatNumber(value) {
 
 function formatPlayerName(name) {
   return name === "Joao" ? "João" : name;
+}
+
+function isCantinhoCategory(category) {
+  return window.FelasNewsData.normalizeCategory(category) === "cantinho do louco";
+}
+
+function isPartidasCategory(category) {
+  const normalized = window.FelasNewsData.normalizeCategory(category);
+  return normalized === "partida" || normalized === "partidas";
 }

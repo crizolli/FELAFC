@@ -51,6 +51,20 @@ window.FelasSupabase = (() => {
     };
   }
 
+  function mapRowToNewsSummary(row) {
+    return window.FelasNewsData.sanitizeNewsItem({
+      id: row.id,
+      category: row.category,
+      title: row.title,
+      summary: row.summary,
+      content: row.summary || "",
+      publishedDate: row.published_date,
+      createdAt: row.created_at,
+      time: row.time_label,
+      ratings: row.ratings
+    });
+  }
+
   async function fetchPublishedNews(limit = null) {
     ensureConfigured();
 
@@ -70,6 +84,53 @@ window.FelasSupabase = (() => {
     }
 
     return (data || []).map(mapRowToNews);
+  }
+
+  async function fetchNewsSummaries(options = {}) {
+    ensureConfigured();
+
+    const limit = options.limit || null;
+    const category = String(options.category || "").trim();
+
+    let query = client
+      .from(TABLE_NAME)
+      .select("id, category, title, summary, published_date, created_at, time_label, ratings")
+      .order("published_date", { ascending: false })
+      .order("created_at", { ascending: false });
+
+    if (category) {
+      query = query.eq("category", category);
+    }
+
+    if (limit) {
+      query = query.limit(limit);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      throw error;
+    }
+
+    return (data || []).map(mapRowToNewsSummary);
+  }
+
+  async function fetchLatestRatedNewsSummary() {
+    ensureConfigured();
+
+    const { data, error } = await client
+      .from(TABLE_NAME)
+      .select("id, category, title, summary, published_date, created_at, time_label, ratings")
+      .neq("category", "Cantinho do Louco")
+      .order("published_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    return data ? mapRowToNewsSummary(data) : null;
   }
 
   async function fetchNewsById(id) {
@@ -263,6 +324,8 @@ window.FelasSupabase = (() => {
     isConfigured,
     getConfigError,
     fetchPublishedNews,
+    fetchNewsSummaries,
+    fetchLatestRatedNewsSummary,
     fetchNewsById,
     upsertNewsItem,
     deleteNewsItem,

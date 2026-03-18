@@ -36,20 +36,28 @@ async function renderNews() {
   }
 
   try {
-    const allNewsItems = await window.FelasSupabase.fetchPublishedNews();
-    const filteredItems = newsCategoryFilter
-      ? allNewsItems.filter((item) => item.category === newsCategoryFilter)
-      : prioritizeLatestPartidas(allNewsItems);
-    const newsItems = filteredItems.slice(0, 5);
-    const latestRatedItem = allNewsItems.find((item) => shouldShowRatings(item.category));
-    const latestItem = newsItems[0];
+    const [newsItems, latestPartidasItem, latestRatedItem] = await Promise.all([
+      window.FelasSupabase.fetchNewsSummaries({
+        limit: newsCategoryFilter ? 5 : 8,
+        category: newsCategoryFilter || undefined
+      }),
+      newsCategoryFilter ? Promise.resolve(null) : window.FelasSupabase.fetchNewsSummaries({ limit: 1, category: "Partidas" }).then((items) => items[0] || null),
+      window.FelasSupabase.fetchLatestRatedNewsSummary()
+    ]);
 
-    if (!newsItems.length) {
+    const orderedNewsItems = newsCategoryFilter
+      ? newsItems
+      : prioritizeLatestPartidas(newsItems, latestPartidasItem);
+
+    const visibleNewsItems = orderedNewsItems.slice(0, 5);
+    const latestItem = visibleNewsItems[0];
+
+    if (!visibleNewsItems.length) {
       renderNewsEmpty("Nenhuma noticia publicada ainda.");
       return;
     }
 
-    const feedMarkup = createFeedWithMobileRatings(newsItems, latestRatedItem);
+    const feedMarkup = createFeedWithMobileRatings(visibleNewsItems, latestRatedItem);
     newsFeed.innerHTML = feedMarkup;
     if (ratingsDate) {
       ratingsDate.innerHTML = latestRatedItem ? createRatingsDateMarkup(latestRatedItem) : "";
@@ -198,9 +206,9 @@ function isCantinhoCategory(category) {
   return window.FelasNewsData.normalizeCategory(category) === "cantinho do louco";
 }
 
-function prioritizeLatestPartidas(items) {
+function prioritizeLatestPartidas(items, latestPartidasItem) {
   const sortedItems = [...items];
-  const firstPartidas = sortedItems.find((item) => isPartidasCategory(item.category));
+  const firstPartidas = latestPartidasItem || sortedItems.find((item) => isPartidasCategory(item.category));
 
   if (!firstPartidas) {
     return sortedItems;
