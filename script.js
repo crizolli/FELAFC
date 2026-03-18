@@ -1,7 +1,12 @@
 const newsFeed = document.querySelector("#news-feed");
 const ratingsDate = document.querySelector("#ratings-date");
 const ratingsGrid = document.querySelector("#ratings-grid");
+const refreshIndicator = document.querySelector("#refresh-indicator");
 const newsCategoryFilter = document.body?.dataset.newsCategory || "";
+const FEED_CACHE_TTL = 60 * 1000;
+const RATINGS_CACHE_TTL = 60 * 1000;
+const NEWS_CACHE_VERSION_KEY = "felas:news-cache-version";
+let refreshIndicatorTimer = 0;
 const playerImages = {
   Breno: "breno.png",
   Glik: "glik.png",
@@ -16,10 +21,11 @@ const playerImagePositions = {
 };
 
 if (newsFeed) {
+  bindLiveRefresh();
   renderNews();
 }
 
-async function renderNews() {
+async function renderNews(options = {}) {
   if (!window.FelasSupabase?.isConfigured) {
     renderNewsEmpty(window.FelasSupabase?.getConfigError() || "Supabase ainda nao configurado.");
     return;
@@ -36,13 +42,12 @@ async function renderNews() {
   }
 
   try {
-    const [newsItems, latestPartidasItem, latestRatedItem] = await Promise.all([
-      window.FelasSupabase.fetchNewsSummaries({
+    const [newsItems, latestPartidasItem] = await Promise.all([
+      getCachedFeedItems({
         limit: newsCategoryFilter ? 5 : 8,
         category: newsCategoryFilter || undefined
       }),
-      newsCategoryFilter ? Promise.resolve(null) : window.FelasSupabase.fetchNewsSummaries({ limit: 1, category: "Partidas" }).then((items) => items[0] || null),
-      window.FelasSupabase.fetchLatestRatedNewsSummary()
+      newsCategoryFilter ? Promise.resolve(null) : getCachedLatestPartidas()
     ]);
 
     const orderedNewsItems = newsCategoryFilter
@@ -57,14 +62,10 @@ async function renderNews() {
       return;
     }
 
-    const feedMarkup = createFeedWithMobileRatings(visibleNewsItems, latestRatedItem);
-    newsFeed.innerHTML = feedMarkup;
-    if (ratingsDate) {
-      ratingsDate.innerHTML = latestRatedItem ? createRatingsDateMarkup(latestRatedItem) : "";
-    }
-
-    if (ratingsGrid) {
-      ratingsGrid.innerHTML = latestRatedItem ? createRatingsMarkup(latestRatedItem.ratings || window.FelasNewsData.getDefaultRatings()) : "";
+    newsFeed.innerHTML = visibleNewsItems.map(createFeedMarkup).join("");
+    renderLatestRatings();
+    if (options.showRefreshNotice) {
+      showRefreshIndicator();
     }
   } catch (error) {
     renderNewsEmpty("Nao foi possivel carregar as noticias agora.");
@@ -100,24 +101,6 @@ function createFeedMarkup(item) {
   `;
 }
 
-function createFeedWithMobileRatings(items, latestItem) {
-  const isMobile = window.matchMedia("(max-width: 680px)").matches;
-
-  if (!isMobile || !latestItem) {
-    return items.map(createFeedMarkup).join("");
-  }
-
-  return items.map((item, index) => {
-    const articleMarkup = createFeedMarkup(item);
-
-    if (index === 0) {
-      return `${articleMarkup}${createMobileRatingsMarkup(latestItem)}`;
-    }
-
-    return articleMarkup;
-  }).join("");
-}
-
 function createRatingsDateMarkup(item) {
   return `
     <div class="ratings-date-card">
@@ -129,7 +112,7 @@ function createRatingsDateMarkup(item) {
 
 function createMobileRatingsMarkup(item) {
   return `
-    <section class="mobile-ratings-panel">
+    <section class="mobile-ratings-panel" data-mobile-ratings-panel>
       <div class="mobile-ratings-header">
         <p class="sidebar-kicker">Notas recentes</p>
       </div>
@@ -223,4 +206,178 @@ function prioritizeLatestPartidas(items, latestPartidasItem) {
 function isPartidasCategory(category) {
   const normalized = window.FelasNewsData.normalizeCategory(category);
   return normalized === "partida" || normalized === "partidas";
+}
+
+async function renderLatestRatings() {
+  try {
+    const latestRatedItem = await getCachedLatestRatings();
+
+    if (ratingsDate) {
+      ratingsDate.innerHTML = latestRatedItem ? createRatingsDateMarkup(latestRatedItem) : "";
+    }
+
+    if (ratingsGrid) {
+      ratingsGrid.innerHTML = latestRatedItem ? createRatingsMarkup(latestRatedItem.ratings || window.FelasNewsData.getDefaultRatings()) : "";
+    }
+
+    renderMobileRatingsPanel(latestRatedItem);
+  } catch (_error) {
+    if (ratingsDate) {
+      ratingsDate.innerHTML = "";
+    }
+
+    if (ratingsGrid) {
+      ratingsGrid.innerHTML = "";
+    }
+
+    renderMobileRatingsPanel(null);
+  }
+}
+
+function renderMobileRatingsPanel(item) {
+  const existingPanel = newsFeed.querySelector("[data-mobile-ratings-panel]");
+  if (existingPanel) {
+    existingPanel.remove();
+  }
+
+  const isMobile = window.matchMedia("(max-width: 680px)").matches;
+  if (!isMobile || !item) {
+    return;
+  }
+
+  const firstFeedItem = newsFeed.querySelector(".feed-item");
+  if (!firstFeedItem) {
+    return;
+  }
+
+  firstFeedItem.insertAdjacentHTML("afterend", createMobileRatingsMarkup(item));
+}
+
+async function getCachedFeedItems(options) {
+  const cacheKey = createFeedCacheKey(options);
+  const cachedValue = readCache(cacheKey, FEED_CACHE_TTL);
+
+  if (cachedValue) {
+    return cachedValue;
+  }
+
+  const freshItems = await window.FelasSupabase.fetchNewsSummaries(options);
+  writeCache(cacheKey, freshItems);
+  return freshItems;
+}
+
+async function getCachedLatestPartidas() {
+  const cacheKey = createFeedCacheKey({ limit: 1, category: "Partidas" });
+  const cachedValue = readCache(cacheKey, FEED_CACHE_TTL);
+
+  if (cachedValue) {
+    return cachedValue[0] || null;
+  }
+
+  const items = await window.FelasSupabase.fetchNewsSummaries({ limit: 1, category: "Partidas" });
+  writeCache(cacheKey, items);
+  return items[0] || null;
+}
+
+async function getCachedLatestRatings() {
+  const cacheKey = "felas:latest-ratings";
+  const cachedValue = readCache(cacheKey, RATINGS_CACHE_TTL);
+
+  if (cachedValue) {
+    return cachedValue;
+  }
+
+  const freshItem = await window.FelasSupabase.fetchLatestRatedNewsSummary();
+  writeCache(cacheKey, freshItem);
+  return freshItem;
+}
+
+function createFeedCacheKey(options) {
+  const limit = Number(options?.limit || 0);
+  const category = String(options?.category || "all").trim().toLowerCase();
+  return `felas:feed:${category}:${limit}`;
+}
+
+function readCache(key, ttl) {
+  try {
+    const rawValue = window.sessionStorage.getItem(key);
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsed = JSON.parse(rawValue);
+    if (!parsed || typeof parsed.savedAt !== "number") {
+      window.sessionStorage.removeItem(key);
+      return null;
+    }
+
+    if (parsed.version !== getNewsCacheVersion()) {
+      window.sessionStorage.removeItem(key);
+      return null;
+    }
+
+    if (Date.now() - parsed.savedAt > ttl) {
+      window.sessionStorage.removeItem(key);
+      return null;
+    }
+
+    return parsed.value ?? null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function writeCache(key, value) {
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify({
+      savedAt: Date.now(),
+      version: getNewsCacheVersion(),
+      value
+    }));
+  } catch (_error) {
+    // Ignore cache write failures.
+  }
+}
+
+function getNewsCacheVersion() {
+  try {
+    return window.localStorage.getItem(NEWS_CACHE_VERSION_KEY) || "0";
+  } catch (_error) {
+    return "0";
+  }
+}
+
+function bindLiveRefresh() {
+  window.addEventListener("storage", (event) => {
+    if (event.key !== NEWS_CACHE_VERSION_KEY) {
+      return;
+    }
+
+    renderNews({ showRefreshNotice: true });
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      renderNews({ showRefreshNotice: true });
+    }
+  });
+}
+
+function showRefreshIndicator() {
+  if (!refreshIndicator) {
+    return;
+  }
+
+  window.clearTimeout(refreshIndicatorTimer);
+  refreshIndicator.hidden = false;
+  requestAnimationFrame(() => {
+    refreshIndicator.classList.add("is-visible");
+  });
+
+  refreshIndicatorTimer = window.setTimeout(() => {
+    refreshIndicator.classList.remove("is-visible");
+    window.setTimeout(() => {
+      refreshIndicator.hidden = true;
+    }, 180);
+  }, 2200);
 }

@@ -16,6 +16,7 @@ const submitMediaButton = document.querySelector("#submit-media");
 const cancelMediaEditButton = document.querySelector("#cancel-media-edit");
 const mediaFeedback = document.querySelector("#media-feedback");
 const mediaList = document.querySelector("#media-list");
+const NEWS_CACHE_VERSION_KEY = "felas:news-cache-version";
 
 let currentNews = [];
 let currentMedia = [];
@@ -114,6 +115,7 @@ function bindEvents() {
           ratings
         });
 
+        bumpNewsCacheVersion();
         await refreshPublishedNews();
         resetFormState();
         updateFormFeedback(editingId ? "Noticia atualizada com sucesso." : "Noticia publicada com sucesso.", false);
@@ -127,6 +129,7 @@ function bindEvents() {
     resetNewsButton.addEventListener("click", async () => {
       try {
         await window.FelasSupabase.deleteAllNews();
+        bumpNewsCacheVersion();
         currentNews = [];
         renderPublishedNews(currentNews);
         resetFormState();
@@ -212,6 +215,7 @@ function bindEvents() {
           }));
 
         await window.FelasSupabase.replaceAllNews(sanitizedNews);
+        bumpNewsCacheVersion();
         await refreshPublishedNews();
         resetFormState();
         updateFormFeedback("Noticias importadas com sucesso.", false);
@@ -399,6 +403,7 @@ function startEditingNews(id) {
 async function deleteNews(id) {
   try {
     await window.FelasSupabase.deleteNewsItem(id);
+    bumpNewsCacheVersion();
     currentNews = currentNews.filter((item) => item.id !== id);
     renderPublishedNews(currentNews);
 
@@ -554,5 +559,13 @@ async function deleteMedia(id) {
     updateMediaFeedback("Vídeo removido com sucesso.", false);
   } catch (error) {
     updateMediaFeedback("Nao foi possivel remover o vídeo.", true);
+  }
+}
+
+function bumpNewsCacheVersion() {
+  try {
+    window.localStorage.setItem(NEWS_CACHE_VERSION_KEY, String(Date.now()));
+  } catch (_error) {
+    // Ignore cache invalidation failures.
   }
 }

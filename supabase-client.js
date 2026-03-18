@@ -60,9 +60,17 @@ window.FelasSupabase = (() => {
       content: row.summary || "",
       publishedDate: row.published_date,
       createdAt: row.created_at,
-      time: row.time_label,
-      ratings: row.ratings
+      time: ""
     });
+  }
+
+  function mapRowToRatingsSummary(row) {
+    return {
+      publishedDate: row.published_date,
+      ratings: Array.isArray(row.ratings)
+        ? row.ratings
+        : window.FelasNewsData.getDefaultRatings()
+    };
   }
 
   async function fetchPublishedNews(limit = null) {
@@ -94,7 +102,7 @@ window.FelasSupabase = (() => {
 
     let query = client
       .from(TABLE_NAME)
-      .select("id, category, title, summary, published_date, created_at, time_label, ratings")
+      .select("id, category, title, summary, published_date, created_at")
       .order("published_date", { ascending: false })
       .order("created_at", { ascending: false });
 
@@ -119,7 +127,7 @@ window.FelasSupabase = (() => {
 
     const { data, error } = await client
       .from(TABLE_NAME)
-      .select("id, category, title, summary, published_date, created_at, time_label, ratings")
+      .select("published_date, ratings")
       .neq("category", "Cantinho do Louco")
       .order("published_date", { ascending: false })
       .order("created_at", { ascending: false })
@@ -130,7 +138,7 @@ window.FelasSupabase = (() => {
       throw error;
     }
 
-    return data ? mapRowToNewsSummary(data) : null;
+    return data ? mapRowToRatingsSummary(data) : null;
   }
 
   async function fetchNewsById(id) {
