@@ -3,8 +3,8 @@ const ratingsDate = document.querySelector("#ratings-date");
 const ratingsGrid = document.querySelector("#ratings-grid");
 const refreshIndicator = document.querySelector("#refresh-indicator");
 const newsCategoryFilter = document.body?.dataset.newsCategory || "";
-const FEED_CACHE_TTL = 60 * 1000;
-const RATINGS_CACHE_TTL = 60 * 1000;
+const SESSION_CACHE_TTL = 60 * 1000;
+const PERSISTENT_CACHE_TTL = 12 * 60 * 60 * 1000;
 const NEWS_CACHE_VERSION_KEY = "felas:news-cache-version";
 let refreshIndicatorTimer = 0;
 const playerImages = {
@@ -22,7 +22,11 @@ const playerImagePositions = {
 
 if (newsFeed) {
   bindLiveRefresh();
-  renderNews();
+  const cachedPayload = readAnyCache(createHomePayloadCacheKey(), PERSISTENT_CACHE_TTL);
+  if (cachedPayload) {
+    renderHomePayload(cachedPayload);
+  }
+  renderNews({ keepExistingContent: Boolean(cachedPayload) });
 }
 
 async function renderNews(options = {}) {
@@ -31,44 +35,32 @@ async function renderNews(options = {}) {
     return;
   }
 
-  newsFeed.innerHTML = '<p class="empty-state">Carregando noticias...</p>';
+  if (!options.keepExistingContent) {
+    newsFeed.innerHTML = '<p class="empty-state">Carregando noticias...</p>';
 
-  if (ratingsDate) {
-    ratingsDate.innerHTML = "";
-  }
+    if (ratingsDate) {
+      ratingsDate.innerHTML = "";
+    }
 
-  if (ratingsGrid) {
-    ratingsGrid.innerHTML = "";
+    if (ratingsGrid) {
+      ratingsGrid.innerHTML = "";
+    }
   }
 
   try {
-    const [newsItems, latestPartidasItem] = await Promise.all([
-      getCachedFeedItems({
+    const payload = await getCachedHomePayload({
         limit: newsCategoryFilter ? 5 : 8,
         category: newsCategoryFilter || undefined
-      }),
-      newsCategoryFilter ? Promise.resolve(null) : getCachedLatestPartidas()
-    ]);
+      }, options.forceRefresh);
 
-    const orderedNewsItems = newsCategoryFilter
-      ? newsItems
-      : prioritizeLatestPartidas(newsItems, latestPartidasItem);
-
-    const visibleNewsItems = orderedNewsItems.slice(0, 5);
-    const latestItem = visibleNewsItems[0];
-
-    if (!visibleNewsItems.length) {
-      renderNewsEmpty("Nenhuma noticia publicada ainda.");
-      return;
-    }
-
-    newsFeed.innerHTML = visibleNewsItems.map(createFeedMarkup).join("");
-    renderLatestRatings();
+    renderHomePayload(payload);
     if (options.showRefreshNotice) {
       showRefreshIndicator();
     }
   } catch (error) {
-    renderNewsEmpty("Nao foi possivel carregar as noticias agora.");
+    if (!options.keepExistingContent) {
+      renderNewsEmpty("Nao foi possivel carregar as noticias agora.");
+    }
   }
 }
 
@@ -84,11 +76,36 @@ function renderNewsEmpty(message) {
   }
 }
 
-function createFeedMarkup(item) {
+function renderHomePayload(payload) {
+  const feedItems = Array.isArray(payload?.feed) ? payload.feed.slice(0, 5) : [];
+  const latestRatings = payload?.latestRatings || null;
+
+  if (!feedItems.length) {
+    renderNewsEmpty("Nenhuma noticia publicada ainda.");
+    return;
+  }
+
+  newsFeed.innerHTML = feedItems.map((item, index) => createFeedMarkup(item, index)).join("");
+
+  if (ratingsDate) {
+    ratingsDate.innerHTML = latestRatings ? createRatingsDateMarkup(latestRatings) : "";
+  }
+
+  if (ratingsGrid) {
+    ratingsGrid.innerHTML = latestRatings ? createRatingsMarkup(latestRatings.ratings || window.FelasNewsData.getDefaultRatings()) : "";
+  }
+
+  renderMobileRatingsPanel(latestRatings);
+}
+
+function createFeedMarkup(item, index = 0) {
+  const loadingMode = index === 0 ? "eager" : "lazy";
+  const fetchPriority = index === 0 ? "high" : "low";
+
   return `
     <article class="feed-item">
       <div class="category-header">
-        <img src="${window.FelasNewsData.escapeAttribute(window.FelasNewsData.createCategoryHeader(item.category))}" alt="Header visual da categoria ${window.FelasNewsData.escapeAttribute(item.category)}" style="object-position:${window.FelasNewsData.escapeAttribute(window.FelasNewsData.getCategoryHeaderPosition(item.category))}">
+        <img src="${window.FelasNewsData.escapeAttribute(window.FelasNewsData.createCategoryHeader(item.category))}" alt="Header visual da categoria ${window.FelasNewsData.escapeAttribute(item.category)}" loading="${loadingMode}" decoding="async" fetchpriority="${fetchPriority}" style="object-position:${window.FelasNewsData.escapeAttribute(window.FelasNewsData.getCategoryHeaderPosition(item.category))}">
       </div>
       <div class="article-copy">
         <span class="tag">${window.FelasNewsData.escapeHtml(item.category)}</span>
@@ -131,7 +148,7 @@ function createRatingsMarkup(ratings) {
     <article class="rating-card ${getRatingClass(rating.value)} ${rating.name === topPlayerName ? "rating-top-player" : ""}">
       <div class="rating-player-row">
         <div class="rating-avatar">
-          <img src="${window.FelasNewsData.escapeAttribute(getPlayerImage(rating.name))}" alt="${window.FelasNewsData.escapeAttribute(rating.name)}" style="object-position:${window.FelasNewsData.escapeAttribute(getPlayerImagePosition(rating.name))}">
+          <img src="${window.FelasNewsData.escapeAttribute(getPlayerImage(rating.name))}" alt="${window.FelasNewsData.escapeAttribute(rating.name)}" loading="lazy" decoding="async" style="object-position:${window.FelasNewsData.escapeAttribute(getPlayerImagePosition(rating.name))}">
         </div>
         <span class="rating-player">${window.FelasNewsData.escapeHtml(formatPlayerName(rating.name))}</span>
       </div>
@@ -189,51 +206,6 @@ function isCantinhoCategory(category) {
   return window.FelasNewsData.normalizeCategory(category) === "cantinho do louco";
 }
 
-function prioritizeLatestPartidas(items, latestPartidasItem) {
-  const sortedItems = [...items];
-  const firstPartidas = latestPartidasItem || sortedItems.find((item) => isPartidasCategory(item.category));
-
-  if (!firstPartidas) {
-    return sortedItems;
-  }
-
-  return [
-    firstPartidas,
-    ...sortedItems.filter((item) => item.id !== firstPartidas.id)
-  ];
-}
-
-function isPartidasCategory(category) {
-  const normalized = window.FelasNewsData.normalizeCategory(category);
-  return normalized === "partida" || normalized === "partidas";
-}
-
-async function renderLatestRatings() {
-  try {
-    const latestRatedItem = await getCachedLatestRatings();
-
-    if (ratingsDate) {
-      ratingsDate.innerHTML = latestRatedItem ? createRatingsDateMarkup(latestRatedItem) : "";
-    }
-
-    if (ratingsGrid) {
-      ratingsGrid.innerHTML = latestRatedItem ? createRatingsMarkup(latestRatedItem.ratings || window.FelasNewsData.getDefaultRatings()) : "";
-    }
-
-    renderMobileRatingsPanel(latestRatedItem);
-  } catch (_error) {
-    if (ratingsDate) {
-      ratingsDate.innerHTML = "";
-    }
-
-    if (ratingsGrid) {
-      ratingsGrid.innerHTML = "";
-    }
-
-    renderMobileRatingsPanel(null);
-  }
-}
-
 function renderMobileRatingsPanel(item) {
   const existingPanel = newsFeed.querySelector("[data-mobile-ratings-panel]");
   if (existingPanel) {
@@ -253,78 +225,28 @@ function renderMobileRatingsPanel(item) {
   firstFeedItem.insertAdjacentHTML("afterend", createMobileRatingsMarkup(item));
 }
 
-async function getCachedFeedItems(options) {
-  const cacheKey = createFeedCacheKey(options);
-  const cachedValue = readCache(cacheKey, FEED_CACHE_TTL);
+async function getCachedHomePayload(options, forceRefresh = false) {
+  const cacheKey = createHomePayloadCacheKey(options);
 
-  if (cachedValue) {
-    return cachedValue;
+  if (!forceRefresh) {
+    const sessionCached = readSessionCache(cacheKey, SESSION_CACHE_TTL);
+    if (sessionCached) {
+      return sessionCached;
+    }
   }
 
-  const freshItems = await window.FelasSupabase.fetchNewsSummaries(options);
-  writeCache(cacheKey, freshItems);
-  return freshItems;
+  const freshPayload = await window.FelasSupabase.fetchHomePayload(options);
+  writeCache(cacheKey, freshPayload);
+  return freshPayload;
 }
 
-async function getCachedLatestPartidas() {
-  const cacheKey = createFeedCacheKey({ limit: 1, category: "Partidas" });
-  const cachedValue = readCache(cacheKey, FEED_CACHE_TTL);
-
-  if (cachedValue) {
-    return cachedValue[0] || null;
-  }
-
-  const items = await window.FelasSupabase.fetchNewsSummaries({ limit: 1, category: "Partidas" });
-  writeCache(cacheKey, items);
-  return items[0] || null;
-}
-
-async function getCachedLatestRatings() {
-  const cacheKey = "felas:latest-ratings";
-  const cachedValue = readCache(cacheKey, RATINGS_CACHE_TTL);
-
-  if (cachedValue) {
-    return cachedValue;
-  }
-
-  const freshItem = await window.FelasSupabase.fetchLatestRatedNewsSummary();
-  writeCache(cacheKey, freshItem);
-  return freshItem;
-}
-
-function createFeedCacheKey(options) {
-  const limit = Number(options?.limit || 0);
+function createHomePayloadCacheKey(options) {
   const category = String(options?.category || "all").trim().toLowerCase();
-  return `felas:feed:${category}:${limit}`;
+  return `felas:home-payload:${category}`;
 }
 
-function readCache(key, ttl) {
-  try {
-    const rawValue = window.sessionStorage.getItem(key);
-    if (!rawValue) {
-      return null;
-    }
-
-    const parsed = JSON.parse(rawValue);
-    if (!parsed || typeof parsed.savedAt !== "number") {
-      window.sessionStorage.removeItem(key);
-      return null;
-    }
-
-    if (parsed.version !== getNewsCacheVersion()) {
-      window.sessionStorage.removeItem(key);
-      return null;
-    }
-
-    if (Date.now() - parsed.savedAt > ttl) {
-      window.sessionStorage.removeItem(key);
-      return null;
-    }
-
-    return parsed.value ?? null;
-  } catch (_error) {
-    return null;
-  }
+function readAnyCache(key, ttl) {
+  return readSessionCache(key, ttl) || readPersistentCache(key, ttl);
 }
 
 function writeCache(key, value) {
@@ -334,8 +256,50 @@ function writeCache(key, value) {
       version: getNewsCacheVersion(),
       value
     }));
+    window.localStorage.setItem(key, JSON.stringify({
+      savedAt: Date.now(),
+      version: getNewsCacheVersion(),
+      value
+    }));
   } catch (_error) {
     // Ignore cache write failures.
+  }
+}
+
+function readSessionCache(key, ttl) {
+  return readStoredCache(window.sessionStorage, key, ttl);
+}
+
+function readPersistentCache(key, ttl) {
+  return readStoredCache(window.localStorage, key, ttl);
+}
+
+function readStoredCache(storage, key, ttl) {
+  try {
+    const rawValue = storage.getItem(key);
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsed = JSON.parse(rawValue);
+    if (!parsed || typeof parsed.savedAt !== "number") {
+      storage.removeItem(key);
+      return null;
+    }
+
+    if (parsed.version !== getNewsCacheVersion()) {
+      storage.removeItem(key);
+      return null;
+    }
+
+    if (Date.now() - parsed.savedAt > ttl) {
+      storage.removeItem(key);
+      return null;
+    }
+
+    return parsed.value ?? null;
+  } catch (_error) {
+    return null;
   }
 }
 
@@ -353,12 +317,12 @@ function bindLiveRefresh() {
       return;
     }
 
-    renderNews({ showRefreshNotice: true });
+    renderNews({ showRefreshNotice: true, forceRefresh: true });
   });
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
-      renderNews({ showRefreshNotice: true });
+      renderNews({ showRefreshNotice: true, keepExistingContent: true, forceRefresh: true });
     }
   });
 }

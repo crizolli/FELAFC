@@ -61,6 +61,102 @@ for delete
 to authenticated
 using (true);
 
+create or replace function public.get_home_payload(requested_category text default null, requested_limit integer default 5)
+returns jsonb
+language sql
+stable
+as $$
+with filtered_news as (
+  select
+    id,
+    category,
+    title,
+    summary,
+    published_date,
+    created_at
+  from public.news_articles
+  where requested_category is null or category = requested_category
+  order by published_date desc, created_at desc
+  limit case
+    when requested_category is null then greatest(coalesce(requested_limit, 5) + 6, 12)
+    else coalesce(requested_limit, 5)
+  end
+),
+latest_partidas as (
+  select
+    id,
+    category,
+    title,
+    summary,
+    published_date,
+    created_at
+  from filtered_news
+  where requested_category is null
+    and lower(trim(category)) in ('partida', 'partidas')
+  order by published_date desc, created_at desc
+  limit 1
+),
+ordered_feed as (
+  select
+    id,
+    category,
+    title,
+    summary,
+    published_date,
+    created_at,
+    0 as priority
+  from latest_partidas
+
+  union all
+
+  select
+    news.id,
+    news.category,
+    news.title,
+    news.summary,
+    news.published_date,
+    news.created_at,
+    1 as priority
+  from filtered_news news
+  where not exists (
+    select 1
+    from latest_partidas partidas
+    where partidas.id = news.id
+  )
+),
+latest_ratings as (
+  select
+    published_date,
+    ratings
+  from public.news_articles
+  where lower(trim(category)) <> 'cantinho do louco'
+  order by published_date desc, created_at desc
+  limit 1
+)
+select jsonb_build_object(
+  'feed',
+  coalesce(
+    (
+      select jsonb_agg(to_jsonb(feed_row) - 'priority' order by feed_row.priority, feed_row.published_date desc, feed_row.created_at desc)
+      from (
+        select *
+        from ordered_feed
+        order by priority, published_date desc, created_at desc
+        limit coalesce(requested_limit, 5)
+      ) as feed_row
+    ),
+    '[]'::jsonb
+  ),
+  'latestRatings',
+  (
+    select to_jsonb(latest_ratings)
+    from latest_ratings
+  )
+);
+$$;
+
+grant execute on function public.get_home_payload(text, integer) to anon, authenticated;
+
 create table if not exists public.media_videos (
   id uuid primary key default gen_random_uuid(),
   url text not null,

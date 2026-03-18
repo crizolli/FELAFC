@@ -81,6 +81,33 @@ window.FelasSupabase = (() => {
     };
   }
 
+  function mapHomePayload(payload) {
+    const feedItems = Array.isArray(payload?.feed)
+      ? payload.feed.map(mapRowToNewsSummary)
+      : [];
+
+    return {
+      feed: feedItems,
+      latestRatings: payload?.latestRatings ? mapRowToRatingsSummary(payload.latestRatings) : null
+    };
+  }
+
+  function prioritizeHomeFeed(items, limit) {
+    const latestPartidas = items.find((item) => {
+      const normalized = window.FelasNewsData.normalizeCategory(item.category);
+      return normalized === "partida" || normalized === "partidas";
+    });
+
+    if (!latestPartidas) {
+      return items.slice(0, limit);
+    }
+
+    return [
+      latestPartidas,
+      ...items.filter((item) => item.id !== latestPartidas.id)
+    ].slice(0, limit);
+  }
+
   async function restSelect(tableName, query = {}) {
     ensurePublicConfigured();
 
@@ -100,6 +127,26 @@ window.FelasSupabase = (() => {
 
     if (!response.ok) {
       throw new Error(`Falha ao consultar ${tableName}.`);
+    }
+
+    return response.json();
+  }
+
+  async function callRpc(functionName, payload = {}) {
+    ensurePublicConfigured();
+
+    const response = await fetch(`${config.url}/rest/v1/rpc/${functionName}`, {
+      method: "POST",
+      headers: {
+        apikey: config.anonKey,
+        Authorization: `Bearer ${config.anonKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Falha ao executar ${functionName}.`);
     }
 
     return response.json();
@@ -138,6 +185,34 @@ window.FelasSupabase = (() => {
     });
 
     return data && data[0] ? mapRowToRatingsSummary(data[0]) : null;
+  }
+
+  async function fetchHomePayload(options = {}) {
+    const limit = Number(options.limit || 5);
+    const category = String(options.category || "").trim();
+
+    try {
+      const payload = await callRpc("get_home_payload", {
+        requested_category: category || null,
+        requested_limit: limit
+      });
+
+      return mapHomePayload(payload);
+    } catch (_error) {
+      const summaryLimit = category ? limit : Math.max(limit + 6, 12);
+      const [feedItems, latestRatings] = await Promise.all([
+        fetchNewsSummaries({
+          limit: summaryLimit,
+          category: category || undefined
+        }),
+        fetchLatestRatedNewsSummary()
+      ]);
+
+      return {
+        feed: category ? feedItems.slice(0, limit) : prioritizeHomeFeed(feedItems, limit),
+        latestRatings
+      };
+    }
   }
 
   async function fetchNewsById(id) {
@@ -314,6 +389,7 @@ window.FelasSupabase = (() => {
     isConfigured,
     getConfigError,
     fetchPublishedNews,
+    fetchHomePayload,
     fetchNewsSummaries,
     fetchLatestRatedNewsSummary,
     fetchNewsById,
