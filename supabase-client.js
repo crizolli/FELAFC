@@ -2,14 +2,14 @@ window.FelasSupabase = (() => {
   const TABLE_NAME = "news_articles";
   const MEDIA_TABLE_NAME = "media_videos";
   const config = window.FelasSupabaseConfig || {};
-  const isConfigured = Boolean(config.url && config.anonKey && window.supabase?.createClient);
-  const client = isConfigured ? window.supabase.createClient(config.url, config.anonKey) : null;
+  const hasPublicConfig = Boolean(config.url && config.anonKey);
+  const hasClientLibrary = Boolean(window.supabase?.createClient);
+  const isConfigured = hasPublicConfig;
+  const client = hasPublicConfig && hasClientLibrary
+    ? window.supabase.createClient(config.url, config.anonKey)
+    : null;
 
   function getConfigError() {
-    if (!window.supabase?.createClient) {
-      return "Biblioteca do Supabase nao carregada.";
-    }
-
     if (!config.url || !config.anonKey) {
       return "Supabase ainda nao configurado. Preencha o arquivo supabase-config.js.";
     }
@@ -17,9 +17,17 @@ window.FelasSupabase = (() => {
     return "";
   }
 
-  function ensureConfigured() {
-    if (!client) {
+  function ensurePublicConfigured() {
+    if (!hasPublicConfig) {
       throw new Error(getConfigError() || "Supabase nao configurado.");
+    }
+  }
+
+  function ensureAdminConfigured() {
+    ensurePublicConfigured();
+
+    if (!client) {
+      throw new Error("Biblioteca do Supabase nao carregada.");
     }
   }
 
@@ -73,92 +81,77 @@ window.FelasSupabase = (() => {
     };
   }
 
+  async function restSelect(tableName, query = {}) {
+    ensurePublicConfigured();
+
+    const url = new URL(`${config.url}/rest/v1/${tableName}`);
+    Object.entries(query).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== "") {
+        url.searchParams.set(key, String(value));
+      }
+    });
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        apikey: config.anonKey,
+        Authorization: `Bearer ${config.anonKey}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Falha ao consultar ${tableName}.`);
+    }
+
+    return response.json();
+  }
+
   async function fetchPublishedNews(limit = null) {
-    ensureConfigured();
-
-    let query = client
-      .from(TABLE_NAME)
-      .select("*")
-      .order("published_date", { ascending: false })
-      .order("created_at", { ascending: false });
-
-    if (limit) {
-      query = query.limit(limit);
-    }
-
-    const { data, error } = await query;
-    if (error) {
-      throw error;
-    }
+    const data = await restSelect(TABLE_NAME, {
+      select: "*",
+      order: "published_date.desc,created_at.desc",
+      limit: limit || undefined
+    });
 
     return (data || []).map(mapRowToNews);
   }
 
   async function fetchNewsSummaries(options = {}) {
-    ensureConfigured();
-
     const limit = options.limit || null;
     const category = String(options.category || "").trim();
 
-    let query = client
-      .from(TABLE_NAME)
-      .select("id, category, title, summary, published_date, created_at")
-      .order("published_date", { ascending: false })
-      .order("created_at", { ascending: false });
-
-    if (category) {
-      query = query.eq("category", category);
-    }
-
-    if (limit) {
-      query = query.limit(limit);
-    }
-
-    const { data, error } = await query;
-    if (error) {
-      throw error;
-    }
+    const data = await restSelect(TABLE_NAME, {
+      select: "id,category,title,summary,published_date,created_at",
+      order: "published_date.desc,created_at.desc",
+      category: category ? `eq.${category}` : undefined,
+      limit: limit || undefined
+    });
 
     return (data || []).map(mapRowToNewsSummary);
   }
 
   async function fetchLatestRatedNewsSummary() {
-    ensureConfigured();
+    const data = await restSelect(TABLE_NAME, {
+      select: "published_date,ratings",
+      category: "neq.Cantinho do Louco",
+      order: "published_date.desc,created_at.desc",
+      limit: 1
+    });
 
-    const { data, error } = await client
-      .from(TABLE_NAME)
-      .select("published_date, ratings")
-      .neq("category", "Cantinho do Louco")
-      .order("published_date", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) {
-      throw error;
-    }
-
-    return data ? mapRowToRatingsSummary(data) : null;
+    return data && data[0] ? mapRowToRatingsSummary(data[0]) : null;
   }
 
   async function fetchNewsById(id) {
-    ensureConfigured();
+    const data = await restSelect(TABLE_NAME, {
+      select: "*",
+      id: `eq.${id}`,
+      limit: 1
+    });
 
-    const { data, error } = await client
-      .from(TABLE_NAME)
-      .select("*")
-      .eq("id", id)
-      .maybeSingle();
-
-    if (error) {
-      throw error;
-    }
-
-    return data ? mapRowToNews(data) : null;
+    return data && data[0] ? mapRowToNews(data[0]) : null;
   }
 
   async function upsertNewsItem(item) {
-    ensureConfigured();
+    ensureAdminConfigured();
 
     const payload = mapNewsToRow(item);
     const { data, error } = await client
@@ -175,7 +168,7 @@ window.FelasSupabase = (() => {
   }
 
   async function deleteNewsItem(id) {
-    ensureConfigured();
+    ensureAdminConfigured();
 
     const { error } = await client
       .from(TABLE_NAME)
@@ -188,7 +181,7 @@ window.FelasSupabase = (() => {
   }
 
   async function deleteAllNews() {
-    ensureConfigured();
+    ensureAdminConfigured();
 
     const { error } = await client
       .from(TABLE_NAME)
@@ -201,7 +194,7 @@ window.FelasSupabase = (() => {
   }
 
   async function replaceAllNews(items) {
-    ensureConfigured();
+    ensureAdminConfigured();
     await deleteAllNews();
 
     if (!Array.isArray(items) || !items.length) {
@@ -222,7 +215,7 @@ window.FelasSupabase = (() => {
   }
 
   async function signIn(email, password) {
-    ensureConfigured();
+    ensureAdminConfigured();
     const { data, error } = await client.auth.signInWithPassword({ email, password });
     if (error) {
       throw error;
@@ -231,7 +224,7 @@ window.FelasSupabase = (() => {
   }
 
   async function signOut() {
-    ensureConfigured();
+    ensureAdminConfigured();
     const { error } = await client.auth.signOut();
     if (error) {
       throw error;
@@ -239,7 +232,7 @@ window.FelasSupabase = (() => {
   }
 
   async function getSession() {
-    ensureConfigured();
+    ensureAdminConfigured();
     const { data, error } = await client.auth.getSession();
     if (error) {
       throw error;
@@ -258,22 +251,11 @@ window.FelasSupabase = (() => {
   }
 
   async function fetchMediaVideos(limit = null) {
-    ensureConfigured();
-
-    let query = client
-      .from(MEDIA_TABLE_NAME)
-      .select("*")
-      .order("published_date", { ascending: false })
-      .order("created_at", { ascending: false });
-
-    if (limit) {
-      query = query.limit(limit);
-    }
-
-    const { data, error } = await query;
-    if (error) {
-      throw error;
-    }
+    const data = await restSelect(MEDIA_TABLE_NAME, {
+      select: "*",
+      order: "published_date.desc,created_at.desc",
+      limit: limit || undefined
+    });
 
     return (data || []).map((item) => ({
       id: item.id,
@@ -285,7 +267,7 @@ window.FelasSupabase = (() => {
   }
 
   async function upsertMediaVideo(item) {
-    ensureConfigured();
+    ensureAdminConfigured();
 
     const payload = {
       id: item.id || undefined,
@@ -314,7 +296,7 @@ window.FelasSupabase = (() => {
   }
 
   async function deleteMediaVideo(id) {
-    ensureConfigured();
+    ensureAdminConfigured();
 
     const { error } = await client
       .from(MEDIA_TABLE_NAME)
